@@ -9,6 +9,7 @@ const schema = (name: string, env: Env) => ({
     fields: [
         { name: "title", type: "string" },
         { name: "textMarkdown", type: "string" },
+        { name: "releaseDate", type: "string", sort: true },
         { name: "embedding", type: "float[]", num_dim: 1024 }
     ]
 } as CollectionSchema);
