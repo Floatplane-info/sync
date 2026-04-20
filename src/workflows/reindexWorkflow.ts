@@ -31,7 +31,9 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
         let i = 0;
 
         while(true) {
+            let run = false;
             const num = await step.do(`Fetch and Index #${(i+1)} (${commas(i * 19)} - ${commas(((i+1) * 19) - 1)})`, async () => {
+                run = true;
                 const videos = await proxyFetch(this.env,
                     // use a slightly lower fetchAfter value in case something gets uploaded while we're scanning
                     `https://www.floatplane.com/api/v3/content/creator?id=59f94c0bdd241b70349eb72b&limit=20&fetchAfter=${i * 19}&search=&sort=DESC`,
@@ -74,13 +76,14 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
 
                 await currentUpdateP;
 
-                // wait random time between 30s and 5 minutes so we aren't spamming floatplane
-                await wait((0.5 + (4.5 * Math.random())) * 60e3);
-
                 return indexedCount;
             });
-            i++;
+            if(run) {
+                // wait random time between 30s and 5 minutes so we aren't spamming floatplane
+                await wait((0.5 + (4.5 * Math.random())) * 60e3);
+            }
             if(num === 0) break;
+            i++;
         }
 
         await step.do("Update alias to point to new collection", async () => {
