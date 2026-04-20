@@ -37,3 +37,12 @@ export function commas(x: number | undefined | null, decimals?: undefined | numb
         .split(".")
     return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (parts.length > 1 ? "." : "") + parts.slice(1).join(".");
 }
+
+export const proxyFetch = ((env: Env, url: RequestInfo, options: RequestInit<RequestInitCfProperties> | undefined) => {
+    if(env.PROXY_TOKEN) {
+        return fetch(`${env.PROXY_URL}?token=${encodeURIComponent(env.PROXY_TOKEN)}&url=${encodeURIComponent(url as string)}`, options)
+    } else {
+        console.warn("Doing non-proxy! (probably missing token)");
+        return fetch(url, options);
+    }
+});
