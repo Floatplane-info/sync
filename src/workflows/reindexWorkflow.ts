@@ -96,6 +96,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
         );
 
         for (const oldCollection of oldCollections) {
+            if(oldCollection === newCollection) continue;
             await step.do("Delete old collection: " + oldCollection, async () => {
                 await client.collections(oldCollection).delete();
             })
