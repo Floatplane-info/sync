@@ -81,7 +81,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
             });
             if(run) {
                 // wait random time between 30s and 5 minutes so we aren't spamming floatplane
-                await step.sleep("Cooldown", `${Math.floor((0.5 + (1.5 * Math.random())) * 60)} seconds`)
+                await step.sleep("Cooldown", `${Math.floor((0.5 + (4.5 * Math.random())) * 60)} seconds`)
             }
             if(num === 0) break;
             i++;
