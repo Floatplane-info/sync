@@ -31,7 +31,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
         let i = 0;
 
         while(true) {
-            const num = await step.do(`Fetch and Index #${(i+1)} (${commas(i * 20)} - ${commas(((i+1) * 20) - 1)})`, async () => {
+            const num = await step.do(`Fetch and Index #${(i+1)} (${commas(i * 19)} - ${commas(((i+1) * 19) - 1)})`, async () => {
                 const videos = await proxyFetch(this.env,
                     // use a slightly lower fetchAfter value in case something gets uploaded while we're scanning
                     `https://www.floatplane.com/api/v3/content/creator?id=59f94c0bdd241b70349eb72b&limit=20&fetchAfter=${i * 19}&search=&sort=DESC`,
