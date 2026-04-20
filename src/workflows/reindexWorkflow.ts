@@ -67,7 +67,8 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
 
                 const indexedCount = await retry(() =>
                     client.collections(newCollection).documents().import(
-                        documents
+                        documents,
+                        { action: "upsert" }
                     ).then(r => r.length)
                 );
 
