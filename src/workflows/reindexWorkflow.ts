@@ -18,7 +18,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
         const client = new Typesense.Client({
             nodes: [{ host: "search.ajg0702.us", port: 443, protocol: "https" }],
             apiKey: this.env.UPDATE_KEY,
-            connectionTimeoutSeconds: 30, // 30 second timeout for all requests
+            connectionTimeoutSeconds: 60
         });
 
         const newCollection = await step.do("Create new collection", async () => {
