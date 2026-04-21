@@ -34,7 +34,14 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
 
         const creators: (FloatplaneCreator & {stats: {posts: number, subscribers: number, channels: {id: string, posts: number}[]}})[] =
             await step.do("Fetch creators", () =>
-                fetch("https://www.floatplane.com/api/v3/creator/discover?limit=100&creatorStats=true")
+                proxyFetch(this.env,
+                    "https://www.floatplane.com/api/v3/creator/discover?limit=100&creatorStats=true",
+                    {
+                        headers: {
+                            "User-Agent": "Mozilla/5.0 (compatible; Floatplane-Info-Indexer/1.0.0; +https://floatplane.info/indexer)"
+                        }
+                    }
+                )
                     .then(r => r.json())
                     .then(r => (r as any).creators)
             );
