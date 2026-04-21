@@ -7,9 +7,11 @@ import {commas, proxyFetch, retry, wait} from "../utils";
 const schema = (name: string, env: Env) => ({
     name,
     fields: [
-        { name: "title", type: "string" },
+        { name: "title", type: "string", stem: true },
         { name: "textMarkdown", type: "string" },
-        { name: "releaseDate", type: "string", sort: true },
+        { name: "timestamp", type: "int32" },
+        { name: "creator.id", type: "string", facet: true },
+        { name: "channel.id", type: "string", facet: true },
         { name: "embedding", type: "float[]", num_dim: 1024 }
     ]
 } as CollectionSchema);
@@ -58,7 +60,9 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                                     if(!embedding) throw new Error("No embedding returned: " + JSON.stringify(r));
                                     return embedding;
                                 })
-                        )
+                        ),
+                        // divides and rounds to make sure it easily fits in int32 (also less mem/storage usage)
+                        timestamp: Math.round(new Date(v.releaseDate).getTime() / 60e3)
                     }))
                 );
 
