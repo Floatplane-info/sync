@@ -2,7 +2,7 @@ import {WorkflowEntrypoint, WorkflowEvent, WorkflowStep} from "cloudflare:worker
 import Typesense from "typesense/src/Typesense";
 import {CollectionSchema} from "typesense";
 import {FloatplaneCreator, FloatplanePost} from "../types";
-import {commas, proxyFetch, retry} from "../utils";
+import {commas, formatFloatplanePost, proxyFetch, retry} from "../utils";
 
 const schema = (name: string, env: Env) => ({
     name,
@@ -69,21 +69,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                         if(videos.length === 0) return 0;
 
                         const documents = await Promise.all(
-                            videos.map(async v => ({
-                                ...v,
-                                embedding: await retry(() =>
-                                    this.env.AI.run("@cf/qwen/qwen3-embedding-0.6b", {
-                                        documents: `# ${v.title}\n${v.textMarkdown ?? v.text}`
-                                    }, { gateway: { id: "floatplane-info" } })
-                                        .then(r => {
-                                            const embedding = r.data?.[0];
-                                            if(!embedding) throw new Error("No embedding returned: " + JSON.stringify(r));
-                                            return embedding;
-                                        })
-                                ),
-                                // divides and rounds to make sure it easily fits in int32 (also less mem/storage usage)
-                                timestamp: Math.round(new Date(v.releaseDate).getTime() / 60e3)
-                            }))
+                            videos.map(v => formatFloatplanePost(v, this.env))
                         );
 
                         // also upsert them in the current active collection (so any changes show up right away)

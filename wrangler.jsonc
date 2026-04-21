@@ -16,6 +16,11 @@
 			"name": "floatplane-info-reindex",
 			"binding": "REINDEX_WORKFLOW",
 			"class_name": "ReIndexWorkflow"
+		},
+		{
+			"name": "floatplane-info-update",
+			"binding": "UPDATE_WORKFLOW",
+			"class_name": "UpdateWorkflow"
 		}
 	],
 	"upload_source_maps": true,
@@ -26,7 +31,7 @@
 		"crons": [
 			"0 10 1 * *", // full-reindex on the first (but actually the 2nd because of timezones) of every month at 3am (10am utc)
 			"30 15-23,0 * * *", // update recents at 30 minutes past the hour during the day (9am-5pm)
-			"0 */2 * * *" // update recents every 2 hours (even not during the day)
+			"0 */2 * * *" // update more recents every 2 hours (even not during the day)
 		]
 	},
 	"ai": {

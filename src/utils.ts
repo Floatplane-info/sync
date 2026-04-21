@@ -1,3 +1,5 @@
+import {FloatplanePost} from "./types";
+
 export function wait(ms: number) {
     return new Promise((res) => {
         setTimeout(res, Math.floor(ms));
@@ -46,3 +48,21 @@ export const proxyFetch = ((env: Env, url: RequestInfo, options: RequestInit<Req
         return fetch(url, options);
     }
 });
+
+export async function formatFloatplanePost(post: FloatplanePost, env: Env) {
+    return {
+        ...post,
+        embedding: await retry(() =>
+            env.AI.run("@cf/qwen/qwen3-embedding-0.6b", {
+                documents: `# ${post.title}\n${post.textMarkdown ?? post.text}`
+            }, { gateway: { id: "floatplane-info" } })
+                .then(r => {
+                    const embedding = r.data?.[0];
+                    if(!embedding) throw new Error("No embedding returned: " + JSON.stringify(r));
+                    return embedding;
+                })
+        ),
+        // divides and rounds to make sure it easily fits in int32 (also less mem/storage usage)
+        timestamp: Math.round(new Date(post.releaseDate).getTime() / 60e3)
+    }
+}
