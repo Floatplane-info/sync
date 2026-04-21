@@ -58,7 +58,7 @@ type FloatplaneImage = {
     childImages?: FloatplaneImage[]
 }
 
-type FloatplaneCreator = {
+export type FloatplaneCreator = {
     id: string,
     owner: {
         id: string,

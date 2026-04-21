@@ -1,8 +1,8 @@
 import {WorkflowEntrypoint, WorkflowEvent, WorkflowStep} from "cloudflare:workers";
 import Typesense from "typesense/src/Typesense";
 import {CollectionSchema} from "typesense";
-import {FloatplanePost} from "../types";
-import {commas, proxyFetch, retry, wait} from "../utils";
+import {FloatplaneCreator, FloatplanePost} from "../types";
+import {commas, proxyFetch, retry} from "../utils";
 
 const schema = (name: string, env: Env) => ({
     name,
@@ -32,70 +32,84 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                 ).then(c => c.name);
         });
 
-        let i = 0;
+        const creators: (FloatplaneCreator & {stats: {posts: number, subscribers: number, channels: {id: string, posts: number}[]}})[] =
+            await step.do("Fetch creators", () =>
+                fetch("https://www.floatplane.com/api/v3/creator/discover?limit=100&creatorStats=true")
+                    .then(r => r.json())
+                    .then(r => (r as any).creators)
+            );
 
-        while(true) {
-            let run = false;
-            const num = await step.do(`Fetch and Index #${(i+1)} (${commas(i * 19)} - ${commas(((i+1) * 19) - 1)})`, async () => {
-                run = true;
-                const videos = await proxyFetch(this.env,
-                    // use a slightly lower fetchAfter value in case something gets uploaded while we're scanning
-                    `https://www.floatplane.com/api/v3/content/creator?id=59f94c0bdd241b70349eb72b&limit=20&fetchAfter=${i * 19}&search=&sort=DESC`,
-                    {
-                        headers: {
-                            "User-Agent": "Mozilla/5.0 (compatible; Floatplane-Info-Indexer/1.0.0; +https://floatplane.info/indexer)"
-                        }
-                    }
-                ).then(r => r.json() as Promise<FloatplanePost[]>);
-                if(videos.length === 0) return 0;
 
-                const documents = await Promise.all(
-                    videos.map(async v => ({
-                        ...v,
-                        embedding: await retry(() =>
-                            this.env.AI.run("@cf/qwen/qwen3-embedding-0.6b", {
-                                documents: `# ${v.title}\n${v.textMarkdown ?? v.text}`
-                            }, { gateway: { id: "floatplane-info" } })
-                                .then(r => {
-                                    const embedding = r.data?.[0];
-                                    if(!embedding) throw new Error("No embedding returned: " + JSON.stringify(r));
-                                    return embedding;
+        const creatorPromises = [];
+        for (const creator of creators) {
+            creatorPromises.push((async () => {
+                let i = 0;
+
+                while(true) {
+                    let run = false;
+                    const num = await step.do(`[${creator.id}] Fetch and Index #${(i+1)} (${commas(i * 19)} - ${commas(((i+1) * 19) - 1)} / ${commas(creator.stats.posts)})`, async () => {
+                        run = true;
+                        const videos = await proxyFetch(this.env,
+                            // use a slightly lower fetchAfter value in case something gets uploaded while we're scanning
+                            `https://www.floatplane.com/api/v3/content/creator?id=${creator.id}&limit=20&fetchAfter=${i * 19}&search=&sort=DESC`,
+                            {
+                                headers: {
+                                    "User-Agent": "Mozilla/5.0 (compatible; Floatplane-Info-Indexer/1.0.0; +https://floatplane.info/indexer)"
+                                }
+                            }
+                        ).then(r => r.json() as Promise<FloatplanePost[]>);
+                        if(videos.length === 0) return 0;
+
+                        const documents = await Promise.all(
+                            videos.map(async v => ({
+                                ...v,
+                                embedding: await retry(() =>
+                                    this.env.AI.run("@cf/qwen/qwen3-embedding-0.6b", {
+                                        documents: `# ${v.title}\n${v.textMarkdown ?? v.text}`
+                                    }, { gateway: { id: "floatplane-info" } })
+                                        .then(r => {
+                                            const embedding = r.data?.[0];
+                                            if(!embedding) throw new Error("No embedding returned: " + JSON.stringify(r));
+                                            return embedding;
+                                        })
+                                ),
+                                // divides and rounds to make sure it easily fits in int32 (also less mem/storage usage)
+                                timestamp: Math.round(new Date(v.releaseDate).getTime() / 60e3)
+                            }))
+                        );
+
+                        // also upsert them in the current active collection (so any changes show up right away)
+                        const currentUpdateP = client.collections("floatplane")
+                            .documents()
+                            .import(documents, { action: "upsert"})
+                            .catch(e => console.warn("Unable to upsert in existing collection:", e));
+
+                        const indexedCount = await retry(() =>
+                            client.collections(newCollection).documents().import(
+                                documents,
+                                { action: "upsert" }
+                            )
+                                .then(r => r.length)
+                                .catch(e => {
+                                    console.warn("Unable to upsert in new collection:", e);
+                                    throw e;
                                 })
-                        ),
-                        // divides and rounds to make sure it easily fits in int32 (also less mem/storage usage)
-                        timestamp: Math.round(new Date(v.releaseDate).getTime() / 60e3)
-                    }))
-                );
+                        );
 
-                // also upsert them in the current active collection (so any changes show up right away)
-                const currentUpdateP = client.collections("floatplane")
-                    .documents()
-                    .import(documents, { action: "upsert"})
-                    .catch(e => console.warn("Unable to upsert in existing collection:", e));
+                        await currentUpdateP;
 
-                const indexedCount = await retry(() =>
-                    client.collections(newCollection).documents().import(
-                        documents,
-                        { action: "upsert" }
-                    )
-                        .then(r => r.length)
-                        .catch(e => {
-                            console.warn("Unable to upsert in new collection:", e);
-                            throw e;
-                        })
-                );
-
-                await currentUpdateP;
-
-                return indexedCount;
-            });
-            if(run) {
-                // wait random time between 30s and 5 minutes so we aren't spamming floatplane
-                await step.sleep("Cooldown", `${Math.floor((0.5 + (4.5 * Math.random())) * 60)} seconds`)
-            }
-            if(num === 0) break;
-            i++;
+                        return indexedCount;
+                    });
+                    if(run) {
+                        // wait random time between 30s and 5 minutes so we aren't spamming floatplane
+                        await step.sleep(`Cooldown ${creator.id}-${i}`, `${Math.floor((0.5 + (4.5 * Math.random())) * 60)} seconds`)
+                    }
+                    if(num === 0) break;
+                    i++;
+                }
+            })());
         }
+        await Promise.all(creatorPromises);
 
         await step.do("Update alias to point to new collection", async () => {
             await client.aliases().upsert("floatplane", { collection_name: newCollection })
