@@ -13,7 +13,8 @@ const schema = (name: string, env: Env) => ({
         { name: "creator.id", type: "string", facet: true },
         { name: "channel.id", type: "string", facet: true },
         { name: "embedding", type: "float[]", num_dim: 1024 }
-    ]
+    ],
+    enable_nested_fields: true
 } as CollectionSchema);
 
 export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
