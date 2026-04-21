@@ -9,7 +9,7 @@ const schema = (name: string, env: Env) => ({
     fields: [
         { name: "title", type: "string", stem: true },
         { name: "textMarkdown", type: "string" },
-        { name: "timestamp", type: "int32" },
+        { name: "timestamp", type: "int32", range_index: true },
         { name: "creator.id", type: "string", facet: true },
         { name: "channel.id", type: "string", facet: true },
         { name: "embedding", type: "float[]", num_dim: 1024 }
@@ -76,7 +76,12 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                     client.collections(newCollection).documents().import(
                         documents,
                         { action: "upsert" }
-                    ).then(r => r.length)
+                    )
+                        .then(r => r.length)
+                        .catch(e => {
+                            console.warn("Unable to upsert in new collection:", e);
+                            throw e;
+                        })
                 );
 
                 await currentUpdateP;
