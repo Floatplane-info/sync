@@ -47,6 +47,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
             );
 
 
+        let ci = 0;
         const creatorPromises = [];
         for (const creator of creators) {
             creatorPromises.push((async () => {
@@ -115,6 +116,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                     i++;
                 }
             })());
+            await step.sleep(`Initial cooldown ${++ci}`, "5 seconds")
         }
         await Promise.all(creatorPromises);
 
