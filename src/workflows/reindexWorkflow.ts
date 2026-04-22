@@ -3,6 +3,7 @@ import Typesense from "typesense/src/Typesense";
 import {CollectionSchema} from "typesense";
 import {FloatplaneCreator, FloatplanePost} from "../types";
 import {commas, formatFloatplanePost, proxyFetch, retry} from "../utils";
+import {UpdateParams} from "./updateWorkflow";
 
 const schema = (name: string, env: Env) => ({
     name,
@@ -108,6 +109,12 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
 
         await step.do("Update alias to point to new collection", async () => {
             await client.aliases().upsert("floatplane", { collection_name: newCollection })
+        });
+
+        // in case anything new was added since we started this scan
+        await step.do("Start fresh update", async () => {
+            await (this.env.UPDATE_WORKFLOW as Workflow<UpdateParams>)
+                .create({ params: { count: 20 } });
         })
 
         const oldCollections = await step.do("Fetch old collections", () =>
