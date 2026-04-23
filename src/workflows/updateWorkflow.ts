@@ -28,7 +28,7 @@ export class UpdateWorkflow extends WorkflowEntrypoint<Env, UpdateParams> {
                 page: 1,
                 facet_by: "creator.id",
                 max_facet_values: 1000,
-                filter_by: "timestamp:>" + Math.round((Date.now() - (6 * 30 * 24 * 60 * 60e3)) / 60e3)
+                filter_by: "timestamp:>" + Math.round((Date.now() - (3 * 30 * 24 * 60 * 60e3)) / 60e3)
             });
             return results.facet_counts![0]!.counts.map(c => c.value);
         });
