@@ -13,7 +13,15 @@ const schema = (name: string, env: Env) => ({
         { name: "timestamp", type: "int32", range_index: true },
         { name: "creator.id", type: "string", facet: true },
         { name: "channel.id", type: "string", facet: true },
-        { name: "embedding", type: "float[]", num_dim: 1024 }
+        {
+            name: "embedding",
+            type: "float[]",
+            num_dim: 1024,
+            hnsw_params: {
+                "M": 150,
+                ef_construction: 10000
+            }
+        }
     ],
     enable_nested_fields: true,
     synonym_sets: ["floatplane-synonyms"]
