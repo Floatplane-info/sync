@@ -35,7 +35,12 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
             connectionTimeoutSeconds: 60
         });
 
-        const newCollection = await step.do("Create new collection", async () => {
+        const newCollection = await step.do("Create new collection", {
+            retries: {
+                delay: "2 minutes",
+                limit: 50
+            }
+        }, async () => {
             return await client.collections()
                 .create(
                     schema("floatplane_" + Date.now().toString(36), this.env)
@@ -43,7 +48,12 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
         });
 
         const creators: (FloatplaneCreator & {stats: {posts: number, subscribers: number, channels: {id: string, posts: number}[]}})[] =
-            await step.do("Fetch creators", () =>
+            await step.do("Fetch creators", {
+                    retries: {
+                        delay: "5 minutes",
+                        limit: 50
+                    }
+                }, () =>
                 proxyFetch(this.env,
                     "https://www.floatplane.com/api/v3/creator/discover?limit=100&creatorStats=true",
                     {
@@ -65,7 +75,12 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
 
                 while(true) {
                     let run = false;
-                    const num = await step.do(`[${creator.id}] Fetch and Index #${(i+1)} (${commas(i * 19)} - ${commas(((i+1) * 19) - 1)} / ${commas(creator.stats.posts)})`, async () => {
+                    const num = await step.do(`[${creator.id}] Fetch and Index #${(i+1)} (${commas(i * 19)} - ${commas(((i+1) * 19) - 1)} / ${commas(creator.stats.posts)})`, {
+                        retries: {
+                            delay: "1 minute",
+                            limit: 15
+                        }
+                    }, async () => {
                         run = true;
                         const videos = await proxyFetch(this.env,
                             // use a slightly lower fetchAfter value in case something gets uploaded while we're scanning
@@ -116,17 +131,32 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
         }
         await Promise.all(creatorPromises);
 
-        await step.do("Update alias to point to new collection", async () => {
+        await step.do("Update alias to point to new collection", {
+            retries: {
+                delay: "2 minutes",
+                limit: 100
+            }
+        }, async () => {
             await client.aliases().upsert("floatplane", { collection_name: newCollection })
         });
 
         // in case anything new was added since we started this scan
-        await step.do("Start fresh update", async () => {
+        await step.do("Start fresh update", {
+            retries: {
+                delay: "5 seconds",
+                limit: 50
+            }
+        }, async () => {
             await (this.env.UPDATE_WORKFLOW as Workflow<UpdateParams>)
                 .create({ params: { count: 20 } });
         })
 
-        const oldCollections = await step.do("Fetch old collections", () =>
+        const oldCollections = await step.do("Fetch old collections", {
+                retries: {
+                    delay: "1 minute",
+                    limit: 50
+                }
+            }, () =>
             client.collections().retrieve({exclude_fields: "fields"})
                 .then(collections =>
                     collections

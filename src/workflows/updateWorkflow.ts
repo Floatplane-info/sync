@@ -38,7 +38,12 @@ export class UpdateWorkflow extends WorkflowEntrypoint<Env, UpdateParams> {
         const creatorPromises = [];
         for (const creator of creators) {
             creatorPromises.push((async () => {
-                await step.do(`[${creator}] Fetch and Index top ${count}`, async () => {
+                await step.do(`[${creator}] Fetch and Index top ${count}`, {
+                    retries: {
+                        delay: "1 minute",
+                        limit: 10
+                    }
+                }, async () => {
                     const videos = await proxyFetch(this.env,
                         // use a slightly lower fetchAfter value in case something gets uploaded while we're scanning
                         `https://www.floatplane.com/api/v3/content/creator?id=${creator}&limit=${count}&fetchAfter=0&search=&sort=DESC`,
