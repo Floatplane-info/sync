@@ -32,7 +32,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
         });
 
         await step.do("Create alias if this is the first run", async () => {
-            const exists = await client.indices.exists({index: "floatplane"})
+            const exists = await client.indices.existsAlias({name: "floatplane"})
                 .then(r => r.body)
                 .catch(e => {
                     if(e?.meta?.statusCode === 404) return false;
@@ -41,10 +41,8 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                 });
             if(exists) return "Index/Alias already exists. Not creating a new one.";
             await client.indices.putAlias({
-                body: {
-                    index: newIndex,
-                    alias: "floatplane"
-                }
+                index: newIndex,
+                name: "floatplane"
             })
                 .catch(e => {
                     console.log("Error while creating index alias:", e);
