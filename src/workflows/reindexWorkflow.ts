@@ -36,7 +36,6 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                 .then(r => r.body)
                 .catch(e => {
                     if(e?.meta?.statusCode === 404) return false;
-                    console.log("Error while checking for index alias:", e)
                     throw e;
                 });
             if(exists) return "Index/Alias already exists. Not creating a new one.";
@@ -45,11 +44,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                     index: newIndex,
                     alias: "floatplane"
                 }
-            })
-                .catch(e => {
-                    console.log("Error while creating index alias:", e);
-                    throw e;
-                });
+            });
             return "Index created, since one didn't already exist."
         });
 
