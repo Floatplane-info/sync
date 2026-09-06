@@ -1,47 +1,50 @@
 import {WorkflowEntrypoint, WorkflowEvent, WorkflowStep} from "cloudflare:workers";
+import Typesense from "typesense/src/Typesense";
+import {CollectionSchema} from "typesense";
 import {FloatplaneCreator, FloatplanePost} from "../types";
 import {commas, formatFloatplanePost, proxyFetch, retry} from "../utils";
 import {UpdateParams} from "./updateWorkflow";
-import {Client} from "@opensearch-project/opensearch";
-import {VIDEOS_INDEX_SETTINGS} from "../indexSettings";
+
+const schema = (name: string, env: Env) => ({
+    name,
+    fields: [
+        { name: "title", type: "string", stem: true },
+        { name: "textMarkdown", type: "string" },
+        { name: "timestamp", type: "int32", range_index: true },
+        { name: "creator.id", type: "string", facet: true },
+        { name: "channel.id", type: "string", facet: true },
+        {
+            name: "embedding",
+            type: "float[]",
+            num_dim: 1024,
+            hnsw_params: {
+                "M": 150,
+                ef_construction: 10000
+            }
+        }
+    ],
+    enable_nested_fields: true,
+    synonym_sets: ["floatplane-synonyms"]
+} as CollectionSchema);
 
 export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
-    async run(_: WorkflowEvent<Params>, step: WorkflowStep) {
-        const client = new Client({
-            node: "https://osearch.ajg0702.us",
-            auth: {
-                username: this.env.OS_UPDATE_USER,
-                password: this.env.OS_UPDATE_PASS
-            },
-            ssl: {
-                rejectUnauthorized: false,
-            },
+    async run(event: WorkflowEvent<Params>, step: WorkflowStep) {
+        const client = new Typesense.Client({
+            nodes: [{ host: "search.ajg0702.us", port: 443, protocol: "https" }],
+            apiKey: this.env.UPDATE_KEY,
+            connectionTimeoutSeconds: 60
         });
 
-        const newIndex = await step.do("Create new collection", {
+        const newCollection = await step.do("Create new collection", {
             retries: {
                 delay: "2 minutes",
                 limit: 50
             }
         }, async () => {
-            const r = await client.indices.create({
-                index: "floatplane_" + Date.now().toString(36),
-                body: VIDEOS_INDEX_SETTINGS
-            });
-            return r.body.index;
-        });
-
-        await step.do("Create alias if this is the first run", async () => {
-            const exists = await client.indices.exists({index: "floatplane"})
-                .then(r => r.body);
-            if(exists) return "Index/Alias already exists. Not creating a new one.";
-            await client.indices.putAlias({
-                body: {
-                    index: newIndex,
-                    alias: "floatplane"
-                }
-            });
-            return "Index created, since one didn't already exist."
+            return await client.collections()
+                .create(
+                    schema("floatplane_" + Date.now().toString(36), this.env)
+                ).then(c => c.name);
         });
 
         const creators: (FloatplaneCreator & {stats: {posts: number, subscribers: number, channels: {id: string, posts: number}[]}})[] =
@@ -95,30 +98,17 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                         );
 
                         // also upsert them in the current active collection (so any changes show up right away)
-                        const currentUpdateP = client.indices.exists({index: "floatplane"})
-                            .then(async ar => {
-                                if(!ar.body) return;
-                                const index = await client.indices.getAlias({name: "floatplane"});
-                                if(Object.keys(index.body).includes(newIndex)) return;
-                                await client.bulk({
-                                    body: documents.map(d => [
-                                        {update: {_index: "floatplane", _id: d.id}},
-                                        {doc: d, doc_as_upsert: true}
-                                    ]).flat(),
-                                    refresh: false
-                                })
-                                    .catch(e => console.warn("Unable to upsert in existing index:", e));
-                            })
+                        const currentUpdateP = client.collections("floatplane")
+                            .documents()
+                            .import(documents, { action: "upsert"})
+                            .catch(e => console.warn("Unable to upsert in existing collection:", e));
 
                         const indexedCount = await retry(() =>
-                            client.bulk({
-                                body: documents.map(d => [
-                                    {update: {_index: newIndex, _id: d.id}},
-                                    {doc: d, doc_as_upsert: true}
-                                ]).flat(),
-                                refresh: false
-                            })
-                                .then(r => r.body.items.length)
+                            client.collections(newCollection).documents().import(
+                                documents,
+                                { action: "upsert" }
+                            )
+                                .then(r => r.length)
                                 .catch(e => {
                                     console.warn("Unable to upsert in new collection:", e);
                                     throw e;
@@ -147,10 +137,7 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                 limit: 100
             }
         }, async () => {
-            await client.indices.updateAliases({ body: { actions: [
-                        { remove: { alias: 'floatplane', index: 'floatplane_*' } },
-                        { add: { alias: 'floatplane', index: newIndex } },
-                    ] } });
+            await client.aliases().upsert("floatplane", { collection_name: newCollection })
         });
 
         // in case anything new was added since we started this scan
@@ -164,28 +151,24 @@ export class ReIndexWorkflow extends WorkflowEntrypoint<Env, Params> {
                 .create({ params: { count: 20 } });
         })
 
-        const oldIndexes = await step.do("Fetch old collections", {
+        const oldCollections = await step.do("Fetch old collections", {
                 retries: {
                     delay: "1 minute",
                     limit: 50
                 }
-            }, async () => {
-                const indices = await client.indices.get({ index: "floatplane_*" })
-                    .then(r => Object.keys(r.body))
-                    .catch(e => {
-                        if(e?.meta?.statusCode === 404) return [];
-                        throw e;
-                    });
-                // The response body keys are the index names
-                return indices
-                    .filter(i => i.startsWith("floatplane_") && i !== newIndex);
-            }
+            }, () =>
+            client.collections().retrieve({exclude_fields: "fields"})
+                .then(collections =>
+                    collections
+                        .filter(c => c.name.startsWith("floatplane_"))
+                        .map(c => c.name)
+                )
         );
 
-        for (const oldIndex of oldIndexes) {
-            if(oldIndex === newIndex) continue;
-            await step.do("Delete old index: " + oldIndex, async () => {
-                await client.indices.delete({index: oldIndex});
+        for (const oldCollection of oldCollections) {
+            if(oldCollection === newCollection) continue;
+            await step.do("Delete old collection: " + oldCollection, async () => {
+                await client.collections(oldCollection).delete();
             })
         }
 
