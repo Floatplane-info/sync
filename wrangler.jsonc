@@ -20,7 +20,7 @@
 		{
 			"name": "floatplane-info-update",
 			"binding": "UPDATE_WORKFLOW",
-			"class_name": "UpdateWorkflow"
+			"class_name": "UpdateWorkflow",
 			"default_retention": {
         		"success_retention": "7 days",
         		"error_retention": "30 days"
